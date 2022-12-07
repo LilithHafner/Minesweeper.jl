@@ -1,0 +1,13 @@
+name = "Minesweeper"
+uuid = "bddff93e-315a-4f57-a84c-5c46674f3d29"
+authors = ["Lilith Hafner <Lilith.Hafner@gmail.com> and contributors"]
+version = "0.0.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

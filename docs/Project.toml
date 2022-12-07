@@ -1,0 +1,3 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+Minesweeper = "bddff93e-315a-4f57-a84c-5c46674f3d29"
