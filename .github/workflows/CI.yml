@@ -22,7 +22,7 @@ jobs:
           - '1'
           - 'nightly'
         os:
-          - ubuntu-latest
+          # - ubuntu-latest No display available so Gtk errors on load
           - macOS-latest
           - windows-latest
         arch:
@@ -42,7 +42,7 @@ jobs:
           files: lcov.info
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: macOS-latest
     permissions:
       contents: write
     steps:
