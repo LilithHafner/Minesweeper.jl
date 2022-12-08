@@ -199,12 +199,13 @@ function clear_for_first_move!(mines, y, x)
     mines
 end
 
-struct Game
-    board::Board
-    gui::GUI
-    mines::Base.RefValue{Int}
-    game_over::Base.RefValue{Bool}
-    first_move::Base.RefValue{Bool}
+mutable struct Game
+    const board::Board
+    const gui::GUI
+    const mines::Base.RefValue{Int}
+    const game_over::Base.RefValue{Bool}
+    const first_move::Base.RefValue{Bool}
+    timer::Timer
 end
 
 function Game(height, width, num_mines)
@@ -217,8 +218,10 @@ function Game(height, width, num_mines)
         reset!(board)
         mines[] = num_mines
         set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
+        set_gtk_property!(gui.timer, :label, "Time: 0")
         game_over[]=false
         first_move[]=true
+        close(game.timer)
     end
 
     try_reveal_neighbors(grid, y, x) = try_reveal_neighbors!(Tuple{Int, Int}[], grid, y, x)
@@ -249,7 +252,7 @@ function Game(height, width, num_mines)
     gui = GUI(reset, height, width) do grid, y, x, flag
         game_over[] && return Tuple{Int, Int}[]
         g = grid[y, x]
-        if 4 ≤ g ≤ 10
+        out = if 4 ≤ g ≤ 10
             neighbors = count(==(1), grid[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
             if neighbors == g-3
                 try_reveal_neighbors(grid, y, x)
@@ -268,13 +271,31 @@ function Game(height, width, num_mines)
         else
             if first_move[]
                 clear_for_first_move!(board.mines, y, x)
+                game.timer = Timer(1, interval=1) do timer
+                    if game_over[]
+                        close(timer)
+                    else
+                        set_gtk_property!(gui.timer, :label, "Time: $(round(Int, time() - board.start_time[]))")
+                    end
+                end
+                board.start_time[] = time()
                 first_move[] = false
             end
             try_reveal(grid, y, x)
         end
+        if !any(((g,m),) -> (g ≤ 1) & !m, zip(grid, board.mines))
+            game_over[] = true
+            close(game.timer)
+        end
+        out
     end
     set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
-    Game(board, gui, mines, game_over, first_move)
+    game = Game(board, gui, mines, game_over, first_move, Timer(identity, 0.1))
+    finalizer(game) do game # Sometimes breaks things maybe?
+        isopen(game.timer) && close(game.timer)
+        nothing
+    end
+    game
 end
 
 Base.display(game::Game) = showall(game.gui.window)
