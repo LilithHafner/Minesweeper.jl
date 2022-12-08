@@ -15,10 +15,8 @@ struct GUI3
     grid::Matrix{Int8}
 end
 
-function dummy_callback(grid, x, y, button, state)
-    if state == false
-        grid[x, y] += button == 1 ? 1 : -1
-    end
+function dummy_callback(grid, y, x, button)
+    grid[y, x] += button ? -1 : 1
 end
 GUI3(width, height) = GUI3(dummy_callback, width, height)
 function GUI3(callback, width, height)
@@ -92,14 +90,45 @@ function GUI3(callback, width, height)
     # compute grid cell
     grid_cell(event) = floor(Int, event.x/w[]*width)+1, floor(Int, event.y/h[]*height)+1
 
-    for (event, button, state) in ((:button1press, 1, true), (:button2press, 2, true), (:button3press, 3, true), (:button1release, 1, false), (:button2release, 2, false), (:button3release, 3, false))
-        setproperty!(canvas.mouse, event, @guarded (widget, event) -> begin
-            x, y = grid_cell(event)
-            checkbounds(Bool, grid, y, x) || return
-            callback(grid, y, x, button, state)
+    depressed = Ref{Union{Nothing, Tuple{Int, Int}}}(nothing)
+    function undepress()
+        if depressed[] !== nothing
+            x, y = depressed[]
+            depressed[] = nothing
+            grid[y, x] = 0
             paint_cell(getgc(canvas), x, y)
-            reveal(canvas, true)
-            nothing
+        end
+    end
+    @guarded function depress(widget, event)
+        x, y = grid_cell(event)
+        depressed[] === (x,y) && return
+        press = checkbounds(Bool, grid, y, x) && grid[y, x] == 0
+        depressed[] === nothing && !press && return
+        undepress()
+        if press
+            depressed[] = (x, y)
+            grid[y, x] = 3
+            paint_cell(getgc(canvas), x, y)
+        end
+        reveal(canvas, true)
+    end
+    for i in 1:3
+        setproperty!(canvas.mouse, Symbol(:button, i, :press), depress)
+        setproperty!(canvas.mouse, Symbol(:button, i, :motion), depress)
+    end
+
+    for (event, button) in ((:button1release, false), (:button2release, true), (:button3release, true))
+        setproperty!(canvas.mouse, event, @guarded (widget, event) -> begin
+            must_reveal = depressed[] !== nothing
+            undepress()
+            x, y = grid_cell(event)
+            if checkbounds(Bool, grid, y, x)
+                callback(grid, y, x, button)
+                paint_cell(getgc(canvas), x, y)
+                reveal(canvas, true)
+            elseif must_reveal
+                reveal(canvas, true)
+            end
         end)
     end
 
