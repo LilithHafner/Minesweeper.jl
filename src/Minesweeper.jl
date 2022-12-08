@@ -206,6 +206,7 @@ mutable struct Game
     const game_over::Base.RefValue{Bool}
     const first_move::Base.RefValue{Bool}
     timer::Timer
+    exit::Condition
 end
 
 function Game(height, width, num_mines)
@@ -213,6 +214,7 @@ function Game(height, width, num_mines)
     mines = Ref(num_mines)
     game_over = Ref(false)
     first_move = Ref(true)
+    exit = Condition()
 
     function reset()
         reset!(board)
@@ -290,7 +292,11 @@ function Game(height, width, num_mines)
         out
     end
     set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
-    game = Game(board, gui, mines, game_over, first_move, Timer(identity, 0.1))
+    signal_connect(gui.window, :destroy) do widget
+        notify(exit)
+    end
+
+    game = Game(board, gui, mines, game_over, first_move, Timer(identity, 0.1), exit)
     finalizer(game) do game # Sometimes breaks things maybe?
         isopen(game.timer) && close(game.timer)
         nothing
@@ -300,6 +306,6 @@ end
 
 Base.display(game::Game) = showall(game.gui.window)
 
-main() = Game(16, 16, 40)
+main() = wait(Game(16, 16, 40).exit)
 
 end
