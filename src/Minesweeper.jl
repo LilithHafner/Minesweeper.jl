@@ -202,17 +202,21 @@ end
 struct Game
     board::Board
     gui::GUI
+    mines::Base.RefValue{Int}
     game_over::Base.RefValue{Bool}
     first_move::Base.RefValue{Bool}
 end
 
 function Game(height, width, num_mines)
     board = Board(height, width, num_mines)
+    mines = Ref(num_mines)
     game_over = Ref(false)
     first_move = Ref(true)
 
     function reset()
         reset!(board)
+        mines[] = num_mines
+        set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
         game_over[]=false
         first_move[]=true
     end
@@ -245,31 +249,32 @@ function Game(height, width, num_mines)
     gui = GUI(reset, height, width) do grid, y, x, flag
         game_over[] && return Tuple{Int, Int}[]
         g = grid[y, x]
-        if flag
+        if 4 ≤ g ≤ 10
+            neighbors = count(==(1), grid[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
+            if neighbors == g-3
+                try_reveal_neighbors(grid, y, x)
+            else
+                Tuple{Int, Int}[]
+            end
+        elseif flag
             if g ∈ (0,1)
+                mines[] += 2g-1
+                set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
                 grid[y, x] = 1-g
                 [(y, x)]
             else
                 Tuple{Int, Int}[]
             end
-        elseif !flag
-            if 4 ≤ g ≤ 10
-                neighbors = count(==(1), grid[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
-                if neighbors == g-3
-                    try_reveal_neighbors(grid, y, x)
-                else
-                    Tuple{Int, Int}[]
-                end
-            else
-                if first_move[]
-                    clear_for_first_move!(board.mines, y, x)
-                    first_move[] = false
-                end
-                try_reveal(grid, y, x)
+        else
+            if first_move[]
+                clear_for_first_move!(board.mines, y, x)
+                first_move[] = false
             end
+            try_reveal(grid, y, x)
         end
     end
-    Game(board, gui, game_over, first_move)
+    set_gtk_property!(gui.mines, :label, "Mines: $(mines[])")
+    Game(board, gui, mines, game_over, first_move)
 end
 
 Base.display(game::Game) = showall(game.gui.window)
