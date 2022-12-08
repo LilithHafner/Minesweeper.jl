@@ -200,11 +200,11 @@ function clear_for_first_move!(mines, y, x)
 end
 
 mutable struct Game
-    const board::Board
-    const gui::GUI
-    const mines::Base.RefValue{Int}
-    const game_over::Base.RefValue{Bool}
-    const first_move::Base.RefValue{Bool}
+    board::Board
+    gui::GUI
+    mines::Base.RefValue{Int}
+    game_over::Base.RefValue{Bool}
+    first_move::Base.RefValue{Bool}
     timer::Timer
     exit::Condition
 end
