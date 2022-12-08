@@ -306,6 +306,10 @@ end
 
 Base.display(game::Game) = showall(game.gui.window)
 
-main() = wait(Game(16, 16, 40).exit)
+function main()
+    g = Game(16, 16, 40)
+    display(g)
+    wait(g.exit)
+end
 
 end
