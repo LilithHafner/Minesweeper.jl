@@ -121,8 +121,9 @@ function GUI3(callback, width, height)
             undepress()
             x, y = grid_cell(event)
             if checkbounds(Bool, grid, y, x)
-                callback(grid, y, x, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
-                paint_cell(getgc(canvas), x, y)
+                for (y,x) in callback(grid, y, x, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
+                    paint_cell(getgc(canvas), x, y)
+                end
                 reveal(canvas, true)
             elseif must_reveal
                 reveal(canvas, true)
@@ -175,12 +176,34 @@ end
 
 function Game1(width, height, num_mines)
     board = Board(width, height, num_mines)
+
+    try_reveal(grid, y, x) = try_reveal!(Tuple{Int, Int}[], grid, y, x)
+    function try_reveal!(revealed, grid, y, x)
+        g = grid[y, x]
+        if g == 0
+            push!(revealed, (y, x))
+            if board.mines[y, x]
+                grid[y, x] = 2
+            else
+                neighbors = sum(board.mines[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
+                grid[y, x] = 3 + neighbors
+                if neighbors == 0
+                    for y in max(firstindex(axes(grid, 1)),y-1):min(lastindex(axes(grid, 1)),y+1), x in max(firstindex(axes(grid, 2)),x-1):min(lastindex(axes(grid, 2)),x+1)
+                        try_reveal!(revealed, grid, y, x)
+                    end
+                end
+            end
+        end
+        revealed
+    end
+
     gui = GUI3(width, height) do grid, y, x, flag
         g = grid[y, x]
         if flag && g ∈ (0,1)
             grid[y, x] = 1-g
-        elseif !flag && g == 0
-            grid[y, x] = board.mines[y, x] ? 2 : 3 + sum(board.mines[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
+            [(y,x)]
+        elseif !flag
+            try_reveal(grid, y, x)
         end
     end
     Game1(board, gui)
