@@ -3,7 +3,7 @@ module Minesweeper
 using Gtk
 using Cairo: set_font_size, text_extents
 
-export GUI3, Game1, Board
+export GUI3, Game3, Board2
 
 struct GUI3
     window::GtkWindow
@@ -19,7 +19,7 @@ function dummy_callback(grid, y, x, button)
     grid[y, x] += button ? -1 : 1
 end
 GUI3(width, height) = GUI3(dummy_callback, width, height)
-function GUI3(callback, width, height)
+function GUI3(callback, reset, width, height)
     vbox = GtkBox(:v)
 
     hbox = GtkBox(:h); push!(vbox, hbox) # construct rather than push
@@ -35,7 +35,7 @@ function GUI3(callback, width, height)
     w = Ref(0)
     h = Ref(0)
     function paint_cell(ctx, x, y)
-        # 0 = hidden, 1 = flagged, 2 = mine, 3 = clicked mine, 4 = blank, 5+ = number of mines around
+        # 0 = hidden, 1 = flagged, 2 = mine, 3 = blank, 4+ = number of mines around
         # set_source_rgb(ctx, 128, 128, 128)
 
         x0 = round(Int, (x-1)*w[]/width)
@@ -131,6 +131,20 @@ function GUI3(callback, width, height)
         end)
     end
 
+    function button_clicked_callback(widget)
+        println(widget, " was clicked!")
+    end
+
+    @guarded signal_connect(button, "clicked") do widget
+        reset()
+        for x in axes(grid, 2), y in axes(grid, 1)
+            paint = grid[y, x] != 0
+            grid[y, x] = 0
+            paint && paint_cell(getgc(canvas), x, y)
+        end
+        reveal(canvas, true)
+    end
+
     window = GtkWindow(vbox, "Minesweeper")
 
     global v = vbox;
@@ -139,43 +153,64 @@ end
 
 Base.display(gui::GUI3) = showall(gui.window)
 
-struct Board
+struct Board2
     mines::BitMatrix
-    start_time::Float64
+    start_time::Base.RefValue{Float64}
 end
 
-function unsafe_popoulate(width, height, count)
-    mines = falses(width, height)
+function unsafe_popoulate!(array, count)
+    array .= false
     while count > 0
-        i = rand(eachindex(mines))
-        count -= !mines[i]
-        mines[i] = true
+        i = rand(eachindex(array))
+        count -= !array[i]
+        array[i] = true
     end
-    mines
+    array
 end
 
-function Board(width, height, num_mines)
+function reset!(b::Board2, num_mines = count(b.mines))
+    if 2num_mines ≤ length(b.mines)
+        unsafe_popoulate!(b.mines, num_mines)
+    else
+        unsafe_popoulate!(b.mines, length(b.mines) - num_mines)
+        b.mines .⊻= true
+    end
+    b.start_time[] = time()
+    b
+end
+
+function Board2(width, height, num_mines)
     1 ≤ width || throw(ArgumentError("width must be positive"))
     1 ≤ height || throw(ArgumentError("height must be positive"))
     0 ≤ num_mines || throw(ArgumentError("num_mines must be non-negative"))
     num_mines ≤ width*height || throw(ArgumentError("Too many mines"))
 
-    if 2num_mines ≤ width*height
-        mines = unsafe_popoulate(width, height, num_mines)
-    else
-        mines = unsafe_popoulate(width, height, width*height - num_mines)
-        mines .⊻= true
-    end
-    Board(mines, time())
+    b = Board2(BitMatrix(undef, width, height), Ref(0.0))
+    reset!(b, num_mines)
 end
 
-struct Game1
-    board::Board
+struct Game3
+    board::Board2
     gui::GUI3
+    gameover::Base.RefValue{Bool}
 end
 
-function Game1(width, height, num_mines)
-    board = Board(width, height, num_mines)
+function Game3(width, height, num_mines)
+    board = Board2(width, height, num_mines)
+    gameover = Ref(false)
+
+    function reset()
+        reset!(board)
+        gameover[]=false
+    end
+
+    try_reveal_neighbors(grid, y, x) = try_reveal_neighbors!(Tuple{Int, Int}[], grid, y, x)
+    function try_reveal_neighbors!(revealed, grid, y, x)
+        for y in max(firstindex(axes(grid, 1)),y-1):min(lastindex(axes(grid, 1)),y+1), x in max(firstindex(axes(grid, 2)),x-1):min(lastindex(axes(grid, 2)),x+1)
+            try_reveal!(revealed, grid, y, x)
+        end
+        revealed
+    end
 
     try_reveal(grid, y, x) = try_reveal!(Tuple{Int, Int}[], grid, y, x)
     function try_reveal!(revealed, grid, y, x)
@@ -184,31 +219,42 @@ function Game1(width, height, num_mines)
             push!(revealed, (y, x))
             if board.mines[y, x]
                 grid[y, x] = 2
+                gameover[] = true
             else
                 neighbors = sum(board.mines[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
                 grid[y, x] = 3 + neighbors
-                if neighbors == 0
-                    for y in max(firstindex(axes(grid, 1)),y-1):min(lastindex(axes(grid, 1)),y+1), x in max(firstindex(axes(grid, 2)),x-1):min(lastindex(axes(grid, 2)),x+1)
-                        try_reveal!(revealed, grid, y, x)
-                    end
-                end
+                neighbors == 0 && try_reveal_neighbors!(revealed, grid, y, x)
             end
         end
         revealed
     end
 
-    gui = GUI3(width, height) do grid, y, x, flag
+    gui = GUI3(reset, width, height) do grid, y, x, flag
+        gameover[] && return Tuple{Int, Int}[]
         g = grid[y, x]
-        if flag && g ∈ (0,1)
-            grid[y, x] = 1-g
-            [(y,x)]
+        if flag
+            if g ∈ (0,1)
+                grid[y, x] = 1-g
+                [(y,x)]
+            else
+                Tuple{Int, Int}[]
+            end
         elseif !flag
-            try_reveal(grid, y, x)
+            if 4 ≤ g ≤ 10
+                neighbors = count(==(1), grid[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
+                if neighbors == g-3
+                    try_reveal_neighbors(grid, y, x)
+                else
+                    Tuple{Int, Int}[]
+                end
+            else
+                try_reveal(grid, y, x)
+            end
         end
     end
-    Game1(board, gui)
+    Game3(board, gui, gameover)
 end
 
-Base.display(game::Game1) = showall(game.gui.window)
+Base.display(game::Game3) = showall(game.gui.window)
 
 end
