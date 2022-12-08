@@ -3,9 +3,9 @@ module Minesweeper
 using Gtk
 using Cairo: set_font_size, text_extents
 
-export GUI3, Game4, Board2
+export GUI, Game, Board
 
-struct GUI3
+struct GUI
     window::GtkWindow
     mines::GtkLabel
     button::GtkButton
@@ -18,8 +18,8 @@ end
 function dummy_callback(grid, y, x, button)
     grid[y, x] += button ? -1 : 1
 end
-GUI3(width, height) = GUI3(dummy_callback, width, height)
-function GUI3(callback, reset, width, height)
+GUI(height, width) = GUI(dummy_callback, height, width)
+function GUI(callback, reset, height, width)
     vbox = GtkBox(:v)
 
     hbox = GtkBox(:h); push!(vbox, hbox) # construct rather than push
@@ -32,21 +32,21 @@ function GUI3(callback, reset, width, height)
     canvas = GtkCanvas(); push!(vbox, canvas)
     set_gtk_property!(canvas, :vexpand, true)
 
-    w = Ref(0)
     h = Ref(0)
-    function paint_cell(ctx, x, y)
+    w = Ref(0)
+    function paint_cell(ctx, y, x)
         # 0 = hidden, 1 = flagged, 2 = mine, 3 = blank, 4+ = number of mines around
         # set_source_rgb(ctx, 128, 128, 128)
 
-        x0 = round(Int, (x-1)*w[]/width)
         y0 = round(Int, (y-1)*h[]/height)
-        x1 = round(Int, x*w[]/width)
+        x0 = round(Int, (x-1)*w[]/width)
         y1 = round(Int, y*h[]/height)
+        x1 = round(Int, x*w[]/width)
         set_source_rgb(ctx, 0.7734375, 0.7734375, 0.7734375)
         rectangle(ctx, x0, y0, x1-x0, y1-y0)
         fill(ctx)
 
-        scale = min(w[]/width, h[]/height)
+        scale = min(h[]/height, w[]/width)
         m1 = max(1, round(Int, min(scale/10, sqrt(scale)*.3)))
         m2 = max(2, round(Int, min(scale/6, sqrt(scale)*.5)))
 
@@ -78,37 +78,37 @@ function GUI3(callback, reset, width, height)
 
     @guarded draw(canvas) do widget
         ctx = getgc(canvas)
-        w[] = Gtk.width(canvas)
         h[] = Gtk.height(canvas)
+        w[] = Gtk.width(canvas)
 
         # Paint grid
         for x in axes(grid, 2), y in axes(grid, 1)
-            paint_cell(ctx, x, y)
+            paint_cell(ctx, y, x)
         end
     end
 
     # compute grid cell
-    grid_cell(event) = floor(Int, event.x/w[]*width)+1, floor(Int, event.y/h[]*height)+1
+    grid_cell(event) = floor(Int, event.y/h[]*height)+1, floor(Int, event.x/w[]*width)+1
 
     depressed = Ref{Union{Nothing, Tuple{Int, Int}}}(nothing)
     function undepress()
         if depressed[] !== nothing
-            x, y = depressed[]
+            y, x = depressed[]
             depressed[] = nothing
             grid[y, x] = 0
-            paint_cell(getgc(canvas), x, y)
+            paint_cell(getgc(canvas), y, x)
         end
     end
     function depress(event, flag)
-        x, y = grid_cell(event)
-        depressed[] === (x,y) && return
+        y, x = grid_cell(event)
+        depressed[] === (y, x) && return
         press = checkbounds(Bool, grid, y, x) && grid[y, x] == 0 && !flag
         depressed[] === nothing && !press && return
         undepress()
         if press
-            depressed[] = (x, y)
+            depressed[] = (y, x)
             grid[y, x] = 3
-            paint_cell(getgc(canvas), x, y)
+            paint_cell(getgc(canvas), y, x)
         end
         reveal(canvas, true)
     end
@@ -119,10 +119,10 @@ function GUI3(callback, reset, width, height)
         setproperty!(canvas.mouse, Symbol(:button, i, :release), @guarded (widget, event) -> begin
             must_reveal = depressed[] !== nothing
             undepress()
-            x, y = grid_cell(event)
+            y, x = grid_cell(event)
             if checkbounds(Bool, grid, y, x)
-                for (y,x) in callback(grid, y, x, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
-                    paint_cell(getgc(canvas), x, y)
+                for (y, x) in callback(grid, y, x, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
+                    paint_cell(getgc(canvas), y, x)
                 end
                 reveal(canvas, true)
             elseif must_reveal
@@ -140,7 +140,7 @@ function GUI3(callback, reset, width, height)
         for x in axes(grid, 2), y in axes(grid, 1)
             paint = grid[y, x] != 0
             grid[y, x] = 0
-            paint && paint_cell(getgc(canvas), x, y)
+            paint && paint_cell(getgc(canvas), y, x)
         end
         reveal(canvas, true)
     end
@@ -148,12 +148,12 @@ function GUI3(callback, reset, width, height)
     window = GtkWindow(vbox, "Minesweeper")
 
     global v = vbox;
-    GUI3(window, mines, button, flag, timer, canvas, grid)
+    GUI(window, mines, button, flag, timer, canvas, grid)
 end
 
-Base.display(gui::GUI3) = showall(gui.window)
+Base.display(gui::GUI) = showall(gui.window)
 
-struct Board2
+struct Board
     mines::BitMatrix
     start_time::Base.RefValue{Float64}
 end
@@ -173,19 +173,19 @@ function populate!(array, count)
     end
 end
 
-function reset!(b::Board2, num_mines = count(b.mines))
+function reset!(b::Board, num_mines = count(b.mines))
     populate!(b.mines, num_mines)
     b.start_time[] = time()
     b
 end
 
-function Board2(width, height, num_mines)
-    1 ≤ width || throw(ArgumentError("width must be positive"))
+function Board(height, width, num_mines)
     1 ≤ height || throw(ArgumentError("height must be positive"))
+    1 ≤ width || throw(ArgumentError("width must be positive"))
     0 ≤ num_mines || throw(ArgumentError("num_mines must be non-negative"))
-    num_mines ≤ width*height || throw(ArgumentError("Too many mines"))
+    num_mines ≤ height*width-9 || throw(ArgumentError("Too many mines"))
 
-    b = Board2(BitMatrix(undef, width, height), Ref(0.0))
+    b = Board(BitMatrix(undef, height, width), Ref(0.0))
     reset!(b, num_mines)
 end
 
@@ -199,15 +199,15 @@ function clear_for_first_move!(mines, y, x)
     mines
 end
 
-struct Game4
-    board::Board2
-    gui::GUI3
+struct Game
+    board::Board
+    gui::GUI
     game_over::Base.RefValue{Bool}
     first_move::Base.RefValue{Bool}
 end
 
-function Game4(width, height, num_mines)
-    board = Board2(width, height, num_mines)
+function Game(height, width, num_mines)
+    board = Board(height, width, num_mines)
     game_over = Ref(false)
     first_move = Ref(true)
 
@@ -242,13 +242,13 @@ function Game4(width, height, num_mines)
         revealed
     end
 
-    gui = GUI3(reset, width, height) do grid, y, x, flag
+    gui = GUI(reset, height, width) do grid, y, x, flag
         game_over[] && return Tuple{Int, Int}[]
         g = grid[y, x]
         if flag
             if g ∈ (0,1)
                 grid[y, x] = 1-g
-                [(y,x)]
+                [(y, x)]
             else
                 Tuple{Int, Int}[]
             end
@@ -269,9 +269,9 @@ function Game4(width, height, num_mines)
             end
         end
     end
-    Game4(board, gui, game_over, first_move)
+    Game(board, gui, game_over, first_move)
 end
 
-Base.display(game::Game4) = showall(game.gui.window)
+Base.display(game::Game) = showall(game.gui.window)
 
 end
