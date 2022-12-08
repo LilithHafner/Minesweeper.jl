@@ -180,7 +180,7 @@ function Game1(width, height, num_mines)
         if flag && g ∈ (0,1)
             grid[y, x] = 1-g
         elseif !flag && g == 0
-            grid[y, x] = board.mines[y, x] ? 2 : 3
+            grid[y, x] = board.mines[y, x] ? 2 : 3 + sum(board.mines[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
         end
     end
     Game1(board, gui)
