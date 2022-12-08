@@ -3,7 +3,7 @@ module Minesweeper
 using Gtk
 using Cairo: set_font_size, text_extents
 
-export GUI3, Board
+export GUI3, Game1, Board
 
 struct GUI3
     window::GtkWindow
@@ -99,10 +99,10 @@ function GUI3(callback, width, height)
             paint_cell(getgc(canvas), x, y)
         end
     end
-    @guarded function depress(widget, event)
+    function depress(event, flag)
         x, y = grid_cell(event)
         depressed[] === (x,y) && return
-        press = checkbounds(Bool, grid, y, x) && grid[y, x] == 0
+        press = checkbounds(Bool, grid, y, x) && grid[y, x] == 0 && !flag
         depressed[] === nothing && !press && return
         undepress()
         if press
@@ -113,17 +113,15 @@ function GUI3(callback, width, height)
         reveal(canvas, true)
     end
     for i in 1:3
-        setproperty!(canvas.mouse, Symbol(:button, i, :press), depress)
-        setproperty!(canvas.mouse, Symbol(:button, i, :motion), depress)
-    end
-
-    for (event, button) in ((:button1release, false), (:button2release, true), (:button3release, true))
-        setproperty!(canvas.mouse, event, @guarded (widget, event) -> begin
+        f = @guarded (w,e) -> depress(e, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
+        setproperty!(canvas.mouse, Symbol(:button, i, :press), f)
+        setproperty!(canvas.mouse, Symbol(:button, i, :motion), f)
+        setproperty!(canvas.mouse, Symbol(:button, i, :release), @guarded (widget, event) -> begin
             must_reveal = depressed[] !== nothing
             undepress()
             x, y = grid_cell(event)
             if checkbounds(Bool, grid, y, x)
-                callback(grid, y, x, button)
+                callback(grid, y, x, (i != 1) ⊻ get_gtk_property(flag, :active, Bool))
                 paint_cell(getgc(canvas), x, y)
                 reveal(canvas, true)
             elseif must_reveal
@@ -170,14 +168,24 @@ function Board(width, height, num_mines)
     Board(mines, time())
 end
 
-# struct Game1
-#     board::Board
-#     gui::GUI3
-#     flags::BitMatrix
-#     revealed::BitMatrix
-#     game_over::Bool
-# end
+struct Game1
+    board::Board
+    gui::GUI3
+end
 
+function Game1(width, height, num_mines)
+    board = Board(width, height, num_mines)
+    gui = GUI3(width, height) do grid, y, x, flag
+        g = grid[y, x]
+        if flag && g ∈ (0,1)
+            grid[y, x] = 1-g
+        elseif !flag && g == 0
+            grid[y, x] = board.mines[y, x] ? 2 : 3
+        end
+    end
+    Game1(board, gui)
+end
 
+Base.display(game::Game1) = showall(game.gui.window)
 
 end
