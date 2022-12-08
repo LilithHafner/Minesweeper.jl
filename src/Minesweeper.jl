@@ -300,4 +300,6 @@ end
 
 Base.display(game::Game) = showall(game.gui.window)
 
+main() = Game(16, 16, 40)
+
 end
