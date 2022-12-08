@@ -3,7 +3,7 @@ module Minesweeper
 using Gtk
 using Cairo: set_font_size, text_extents
 
-export GUI3, Game3, Board2
+export GUI3, Game4, Board2
 
 struct GUI3
     window::GtkWindow
@@ -158,23 +158,23 @@ struct Board2
     start_time::Base.RefValue{Float64}
 end
 
-function unsafe_popoulate!(array, count)
-    array .= false
-    while count > 0
-        i = rand(eachindex(array))
-        count -= !array[i]
-        array[i] = true
+function populate!(array, count)
+    if 2count > length(array)
+        populate!(array, length(array) - count)
+        array .⊻= true
+    else
+        array .= false
+        while count > 0
+            i = rand(eachindex(array))
+            count -= !array[i]
+            array[i] = true
+        end
+        array
     end
-    array
 end
 
 function reset!(b::Board2, num_mines = count(b.mines))
-    if 2num_mines ≤ length(b.mines)
-        unsafe_popoulate!(b.mines, num_mines)
-    else
-        unsafe_popoulate!(b.mines, length(b.mines) - num_mines)
-        b.mines .⊻= true
-    end
+    populate!(b.mines, num_mines)
     b.start_time[] = time()
     b
 end
@@ -189,24 +189,37 @@ function Board2(width, height, num_mines)
     reset!(b, num_mines)
 end
 
-struct Game3
-    board::Board2
-    gui::GUI3
-    gameover::Base.RefValue{Bool}
+function clear_for_first_move!(mines, y, x)
+    neighbors = [CartesianIndex(i, j) for i in max(first(axes(mines, 1)),y-1):min(last(axes(mines, 1)),y+1), j in max(first(axes(mines, 2)),x-1):min(last(axes(mines, 2)),x+1)]
+    free = setdiff(findall(!, mines), neighbors)
+    need_to_move = count(mines[neighbors])
+    need_to_move > length(free) && throw(ArgumentError("Too many mines"))
+    populate!(view(mines, free), need_to_move)
+    mines[neighbors] .= false
+    mines
 end
 
-function Game3(width, height, num_mines)
+struct Game4
+    board::Board2
+    gui::GUI3
+    game_over::Base.RefValue{Bool}
+    first_move::Base.RefValue{Bool}
+end
+
+function Game4(width, height, num_mines)
     board = Board2(width, height, num_mines)
-    gameover = Ref(false)
+    game_over = Ref(false)
+    first_move = Ref(true)
 
     function reset()
         reset!(board)
-        gameover[]=false
+        game_over[]=false
+        first_move[]=true
     end
 
     try_reveal_neighbors(grid, y, x) = try_reveal_neighbors!(Tuple{Int, Int}[], grid, y, x)
     function try_reveal_neighbors!(revealed, grid, y, x)
-        for y in max(firstindex(axes(grid, 1)),y-1):min(lastindex(axes(grid, 1)),y+1), x in max(firstindex(axes(grid, 2)),x-1):min(lastindex(axes(grid, 2)),x+1)
+        for y in max(first(axes(grid, 1)),y-1):min(last(axes(grid, 1)),y+1), x in max(first(axes(grid, 2)),x-1):min(last(axes(grid, 2)),x+1)
             try_reveal!(revealed, grid, y, x)
         end
         revealed
@@ -219,7 +232,7 @@ function Game3(width, height, num_mines)
             push!(revealed, (y, x))
             if board.mines[y, x]
                 grid[y, x] = 2
-                gameover[] = true
+                game_over[] = true
             else
                 neighbors = sum(board.mines[max(begin,y-1):min(end,y+1), max(begin,x-1):min(end,x+1)])
                 grid[y, x] = 3 + neighbors
@@ -230,7 +243,7 @@ function Game3(width, height, num_mines)
     end
 
     gui = GUI3(reset, width, height) do grid, y, x, flag
-        gameover[] && return Tuple{Int, Int}[]
+        game_over[] && return Tuple{Int, Int}[]
         g = grid[y, x]
         if flag
             if g ∈ (0,1)
@@ -248,13 +261,17 @@ function Game3(width, height, num_mines)
                     Tuple{Int, Int}[]
                 end
             else
+                if first_move[]
+                    clear_for_first_move!(board.mines, y, x)
+                    first_move[] = false
+                end
                 try_reveal(grid, y, x)
             end
         end
     end
-    Game3(board, gui, gameover)
+    Game4(board, gui, game_over, first_move)
 end
 
-Base.display(game::Game3) = showall(game.gui.window)
+Base.display(game::Game4) = showall(game.gui.window)
 
 end
