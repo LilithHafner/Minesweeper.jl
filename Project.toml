@@ -8,6 +8,7 @@ Cairo = "159f3aea-2a34-519c-b102-8c37f9878175"
 Gtk = "4c0ca9eb-093a-5379-98c5-f87ac0bbbf44"
 
 [compat]
+Cairo = "1"
 Gtk = "1"
 julia = "1.5.3"
 
